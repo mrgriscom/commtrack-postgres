@@ -117,6 +117,11 @@ select distinct on (location, product)
   *, current_stock / nullif(consumption_rate, 0) as months_remaining
 from stockstate
 order by location, product, at_ desc;
+-- note: filter by a location subset, for small location sets i seem to get better
+-- performance using 'where location = any(array(<locs>))', but at a certain size
+-- it seems more efficient to do a subquery ('where location in (...)') or a join
+
+
 
 -- last soh received for ANY product for each location
 create view last_reported as
@@ -141,6 +146,9 @@ as $$
   where location in (select id from descendants($1))
   group by product;
 $$ language sql;
+-- this seems to get inefficient for very large location sets... i think because it
+-- tries to evaluate the subquery multiple times in an attempt to be smarter. we could
+-- enforce only evaluating it once by moving it to a separate function, i think
 
 -- arg1: location id
 -- arg2: date threshold for lateness
@@ -181,7 +189,7 @@ returns table(product text, num_sites bigint, stock_status text, pct float8)
 as $$
   with entries as (
     select location, product, stock_status(months_remaining)
-    from current_state join descendants(1111247) d on (current_state.location = d.id)
+    from current_state join descendants($1) d on (current_state.location = d.id)
   )
   select a.product, num_sites, stock_status, subtally::float8 / num_sites as pct
   from (
