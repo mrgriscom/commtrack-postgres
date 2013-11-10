@@ -5,21 +5,22 @@ psycopg2
 setup
 =====
 
-    createdb stocktest
-    psql stocktest < schema.sql
+    $ createdb stocktest
+    $ psql stocktest < schema.sql
 
-    python
-    import sampledata
-    sampledata.bootstrap() # will take ~20 minutes
+    $ python
+    > import sampledata
+    > sampledata.bootstrap() # will take ~20 minutes
 
 using
 =====
 
 submit a stock report like:
 
-    stocktest.submit_stock_report(<loc_id>, ['cx soh 40', 'cx r 17', 'cm so', 'co l 6']) # 'product action quantity'
+    # 'product action quantity'
+    stocktest.submit_stock_report(<loc_id>, ['cx soh 40', 'cx r 17', 'cm so', 'co l 6']) 
 
-play with reports in psql:
+play with reports in `psql`:
 
 `current_state` view shows current stock for all products/locations
 
