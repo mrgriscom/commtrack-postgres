@@ -121,6 +121,12 @@ order by location, product, at_ desc;
 -- performance using 'where location = any(array(<locs>))', but at a certain size
 -- it seems more efficient to do a subquery ('where location in (...)') or a join
 
+-- alternate implementation for performance considerations (see above comment)
+-- arg1: array of loc ids
+create function current_state_ALT(int[]) returns setof current_state as $$
+  select * from current_state
+  where location = any($1);
+$$ language sql;
 
 
 -- last soh received for ANY product for each location
@@ -136,19 +142,17 @@ group by location;
 create or replace function aggregate_stock_report(int)
 returns table(product text, stock float8, consumption float8, month_remaining float8)
 as $$
+  -- isolate this subquery for better performance
+  with _state as (
+    select *, case when consumption_rate is null then null else current_stock end as consumable_stock
+    from current_state
+    where location in (select id from descendants($1))
+  )
   select product, sum(current_stock), sum(consumption_rate),
     sum(consumable_stock) / nullif(sum(consumption_rate), 0) as months_remaining
-  from (
-    --exclude stock with no corresponding consumption
-    select *, current_stock + 0 * consumption_rate as consumable_stock
-    from current_state
-  ) x
-  where location in (select id from descendants($1))
+  from _state
   group by product;
 $$ language sql;
--- this seems to get inefficient for very large location sets... i think because it
--- tries to evaluate the subquery multiple times in an attempt to be smarter. we could
--- enforce only evaluating it once by moving it to a separate function, i think
 
 -- arg1: location id
 -- arg2: date threshold for lateness
