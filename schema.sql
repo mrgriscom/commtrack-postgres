@@ -1,4 +1,4 @@
-create extension hstore;
+--create extension hstore; -- requires superuser
 
 create table location (
   id serial primary key,
@@ -8,7 +8,7 @@ create table location (
   sms_code varchar(10) unique,
   type text not null,
 
-  attr hstore,
+  --attr hstore,
   geo text --WKT format compatible with postgis
 );
 create index on location(parent);
@@ -67,7 +67,7 @@ create table stocktransaction (
   subaction varchar(20),
   quantity float8
 );
-create index on stocktransaction(location, product, at_)
+create index on stocktransaction(location, product, at_);
 
 create table stockstate (
   id serial primary key,

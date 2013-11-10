@@ -149,6 +149,6 @@ def sample_data_per_loc(loc, products, num_reports, report_freq):
 def bootstrap():
     make_products()
     make_locations(6, 10) # 1e6 locs: takes ~6min on my machine
-    sample_data('aaaa', 300, 7) # 100 locs, 5 yrs of weekly history: takes ~12min on my machine
+    sample_data('aaaa', 250, 7) # 100 locs, 5 yrs of weekly history: takes ~12min on my machine
 
 
