@@ -189,19 +189,14 @@ $$ language sql;
 
 --arg1: location id
 create or replace function aggregate_stock_status_by_product_report(int)
-returns table(product text, num_sites bigint, stock_status text, pct float8)
+returns table(product text, stock_status text, num_sites bigint, total_sites numeric)
 as $$
-  with entries as (
+  select product, stock_status,
+    count(*) as num_sites,
+    sum(count(*)) over (partition by product) as total_sites
+  from (
     select location, product, stock_status(months_remaining)
     from current_state join descendants($1) d on (current_state.location = d.id)
-  )
-  select a.product, num_sites, stock_status, subtally::float8 / num_sites as pct
-  from (
-    select product, stock_status, count(*) as subtally from entries
-    group by product, stock_status
-  ) a join (
-    select product, count(*) as num_sites from entries 
-    group by product
-  ) b on (a.product = b.product);
+  ) x
+  group by product, stock_status
 $$ language sql;
-

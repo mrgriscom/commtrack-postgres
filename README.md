@@ -25,3 +25,9 @@ play with reports in `psql`:
 `current_state` view shows current stock for all products/locations
 
 the `*_report` functions mimic the current commtrack 'Inventory', 'Reporting Rate', and 'Stock Status by Product' reports, respectively.
+
+it appears that some queries are still preferring sequential scans even though better indexes are available. until i can investigate further, run
+
+    set enable_seqscan = false;
+
+at the start of your `psql` session to force using the indexes
