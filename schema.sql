@@ -67,6 +67,7 @@ create table stocktransaction (
   subaction varchar(20),
   quantity float8
 );
+create index on stocktransaction(location, product, at_)
 
 create table stockstate (
   id serial primary key,
