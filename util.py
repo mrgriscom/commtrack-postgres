@@ -1,5 +1,13 @@
+import psycopg2
+from psycopg2.extras import DictCursor
 import uuid
 import collections
+import settings
+
+def dbinit():
+    conn = psycopg2.connect('dbname=%s' % settings.DB)
+    cur = conn.cursor(cursor_factory=DictCursor)
+    return conn, cur
 
 def mk_uuid():
     return uuid.uuid4().hex[:12]
