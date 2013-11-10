@@ -43,18 +43,8 @@ def compute_consumption(cur, loc_id, product, window_end, window_size, params=No
     window_start = window_end - window_size
 
     authoritative_actions = ['stockonhand', 'stockout']
-    # TODO pass action types as postgres array to reduce risk of sql injection?
-    cur.execute("""
-      select * from stocktransaction
-      where (location, product) = (%%(loc)s, %%(prod)s) and at_ between coalesce((
-          -- get the date of the most recent 'full-count' stock transaction before the window start
-          select max(at_) from stocktransaction 
-          where (location, product) = (%%(loc)s, %%(prod)s) and at_ < %%(start)s
-            and action_ in (%s)
-        ), %%(start)s) and %%(end)s
-      order by at_, id  -- id is importart to preserve intra-stockreport ordering
-    """ % ', '.join("'%s'" % k for k in authoritative_actions),
-                {'loc': loc_id, 'prod': product, 'start': window_start, 'end': window_end})
+    cur.execute('select * from consumption_transactions(%s, %s, %s, %s, %s)',
+                (loc_id, product, window_start, window_end, authoritative_actions))
     transactions = cur.fetchall()
 
     return calc_consumption(transactions, window_start, window_end, params)
