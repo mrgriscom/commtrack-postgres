@@ -69,6 +69,8 @@ create table stocktransaction (
 );
 -- this index is necessary for computing consumption
 create index on stocktransaction(location, product, at_);
+-- this index is for querying stock activity history
+create index on stocktransaction(at_, location);
 
 -- return the relevant stock transactions for computing consumption rate
 -- arg1: location id
@@ -115,4 +117,79 @@ select distinct on (location, product)
   *, current_stock / nullif(consumption_rate, 0) as months_remaining
 from stockstate
 order by location, product, at_ desc;
+
+-- last soh received for ANY product for each location
+create view last_reported as
+select location, max(last_reported) as last_reported
+from current_state
+group by location;
+
+
+-- REPORTS --
+
+-- arg1: location id
+create or replace function aggregate_stock_report(int)
+returns table(product text, stock float8, consumption float8, month_remaining float8)
+as $$
+  select product, sum(current_stock), sum(consumption_rate),
+    sum(consumable_stock) / nullif(sum(consumption_rate), 0) as months_remaining
+  from (
+    --exclude stock with no corresponding consumption
+    select *, current_stock + 0 * consumption_rate as consumable_stock
+    from current_state
+  ) x
+  where location in (select id from descendants($1))
+  group by product;
+$$ language sql;
+
+-- arg1: location id
+-- arg2: date threshold for lateness
+-- arg3: date threshold for non-reporting
+create or replace function reporting_status_report(int, timestamp, timestamp)
+returns table(location int, num_sites bigint, pct_ontime float8, pct_late float8, pct_nonrep float8)
+as $$
+  select agg, count(*) as num_sites,
+    count(ontime)::float8 / count(*) as pct_ontime,
+    count(late)::float8 / count(*) as pct_late,
+    count(nonrep)::float8 / count(*) as pct_nonrep
+  from (
+    select *,
+      nullif(last_reported > $2, false) as ontime,
+      nullif(last_reported between $3 and $2, false) as late,
+      nullif(last_reported < $3, false) as nonrep
+    from by_ancestor($1, array(select id from location where parent = $1)) agg
+      join last_reported lr on (agg.loc = lr.location)
+  ) x
+  group by agg;
+$$ language sql;
+
+-- arg1: months of stock remaining
+-- todo: access location for configurable thresholds; maybe call back out to python?
+create or replace function stock_status(float8) returns text as $$
+select case
+  when $1 is null then 'nodata'
+  when $1 = 0 then 'stockout'
+  when $1 < .5 then 'low'
+  when $1 > 2. then 'over'
+  else 'adequate'
+  end;
+$$ language sql;
+
+--arg1: location id
+create or replace function aggregate_stock_status_by_product_report(int)
+returns table(product text, num_sites bigint, stock_status text, pct float8)
+as $$
+  with entries as (
+    select location, product, stock_status(months_remaining)
+    from current_state join descendants(1111247) d on (current_state.location = d.id)
+  )
+  select a.product, num_sites, stock_status, subtally::float8 / num_sites as pct
+  from (
+    select product, stock_status, count(*) as subtally from entries
+    group by product, stock_status
+  ) a join (
+    select product, count(*) as num_sites from entries 
+    group by product
+  ) b on (a.product = b.product);
+$$ language sql;
 
