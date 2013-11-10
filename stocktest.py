@@ -3,6 +3,8 @@ from psycopg2.extras import DictCursor
 import collections
 from datetime import datetime, timedelta
 import threading
+import Queue
+import random
 import time
 import util as u
 
@@ -11,6 +13,8 @@ def dbinit():
     cur = conn.cursor(cursor_factory=DictCursor)
     return conn, cur
 conn, cur = dbinit()
+
+changes_feed = Queue.PriorityQueue()
 
 def make_locations(depth, fan, lineage=[], parent_id=None):
     """generate fake locations
@@ -165,24 +169,46 @@ def process_product_stock(loc_id, product, transactions, submission_id, timestam
     cur.execute('insert into stockstate (%s) values (%s)' % (', '.join(state.keys()), ', '.join(['%s'] * len(state))), state.values())
     conn.commit()
 
-    threading.Thread(target=update_consumption, args=(loc_id, product)).start()
+    SIMULATED_DELAY = random.uniform(2, 8)
+    changes_feed.put((datetime.now() + timedelta(seconds=SIMULATED_DELAY), (loc_id, product, timestamp)))
 
-def update_consumption(loc_id, product):
-    conn, cur = dbinit() # thread safety
+class ConsumptionUpdater(threading.Thread):
+    def __init__(self, queue):
+        super(ConsumptionUpdater, self).__init__()
+        self.conn, self.cur = dbinit()
+        self.queue = queue
+        self.up = True
 
-    # simulate delay
-    time.sleep(5.)
+    def terminate(self):
+        self.up = False
 
-    CONSUMPTION_WINDOW = 60 # days
-    MIN_WINDOW = 10 # days
-    MIN_PERIODS = 2
+    def run(self):
+        while self.up:
+            try:
+                timestamp, args = self.queue.get_nowait()
+            except Queue.Empty:
+                time.sleep(.01)
+                continue
+            while timestamp > datetime.now():
+                time.sleep(.01)
+            self.update_consumption(*args)
 
-    state = most_recent_state(cur, loc_id, product)
-    consumption = compute_consumption(cur, loc_id, product, datetime.now(), timedelta(days=CONSUMPTION_WINDOW),
-                                      {'min_periods': MIN_PERIODS, 'min_window': MIN_WINDOW})
-    cur.execute('update stockstate set consumption_rate = %s where id = %s', (consumption, state['id']))
-    conn.commit()
-    conn.close()
+    def update_consumption(self, loc_id, product, timestamp):
+        CONSUMPTION_WINDOW = 60 # days
+        MIN_WINDOW = 10 # days
+        MIN_PERIODS = 2
+
+        self.cur.execute('select * from stockstate where (location, product, at_) = (%s, %s, %s)', (loc_id, product, timestamp))
+        state = self.cur.fetchone()
+
+        consumption = compute_consumption(self.cur, loc_id, product, timestamp, timedelta(days=CONSUMPTION_WINDOW),
+                                          {'min_periods': MIN_PERIODS, 'min_window': MIN_WINDOW})
+        self.cur.execute('update stockstate set consumption_rate = %s where id = %s', (consumption, state['id']))
+        self.conn.commit()
+        print 'updated consumption for %s %s @ %s' % (loc_id, product, timestamp)
+consumptionator = ConsumptionUpdater(changes_feed)
+consumptionator.start()
+c = consumptionator
 
 def compute_consumption(cur, loc_id, product, window_end, window_size, params=None):
     window_start = window_end - window_size
